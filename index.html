@@ -1268,11 +1268,11 @@ function fairyAnswer() {
 // ============ AI 요정 대답 ============
 // 인터넷이 있으면 구글 앱스 스크립트 → Gemini(무료 AI)로 아이 질문에 맞는 대답을 받아오고,
 // 인터넷이 없거나 오류가 나면 위의 규칙형 대답(fairyAnswer)으로 자동 전환한다.
-function askFairyAI(question, item) {
+function askFairyAI(question, item, silent) {
   const bubble = document.getElementById('fairy-message');
-  // 대답을 말풍선에 표시하고, 그 꽃잎(item)에도 저장 → 만개 후 다시 누르면 같은 대답이 나옴
+  // 대답을 (silent가 아니면) 말풍선에 표시하고, 그 꽃잎(item)에도 저장 → 만개 후 다시 누르면 같은 대답이 나옴
   function show(text) {
-    bubble.textContent = text;
+    if (!silent) bubble.textContent = text;
     if (item) item.reply = text;
   }
   // 주소가 없거나 오프라인이면 곧바로 규칙형 대답
@@ -1280,7 +1280,7 @@ function askFairyAI(question, item) {
     show(fairyAnswer());
     return;
   }
-  bubble.textContent = '음~ 좋은 질문이다! 잠깐 생각해볼게 🤔✨'; // 생각 중(저장 안 함)
+  if (!silent) bubble.textContent = '음~ 좋은 질문이다! 잠깐 생각해볼게 🤔✨'; // 생각 중(저장 안 함)
   let done = false;
   const fallback = setTimeout(function () {
     if (!done) { done = true; show(fairyAnswer()); }
@@ -1574,6 +1574,8 @@ function addPetal() {
     document.getElementById('btn-bloom').style.display = 'inline-block';
     document.getElementById('q-input').disabled = true;
     document.getElementById('fairy-message').textContent = '✨ 다섯 개의 질문! 이제 만개시킬 시간이야!';
+    // 5번째 대답도 조용히 저장(화면은 만개 안내 유지) → 재클릭 시 5개 모두 같은 대답
+    askFairyAI(q, petalQuestions[petalQuestions.length - 1], true);
     clearTimeout(idleTimer);
   }
 }
