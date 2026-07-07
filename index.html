@@ -1268,22 +1268,12 @@ function fairyAnswer() {
 // ============ AI 요정 대답 ============
 // 인터넷이 있으면 구글 앱스 스크립트 → Gemini(무료 AI)로 아이 질문에 맞는 대답을 받아오고,
 // 인터넷이 없거나 오류가 나면 위의 규칙형 대답(fairyAnswer)으로 자동 전환한다.
-function askFairyAI(question, item, silent) {
-  const bubble = document.getElementById('fairy-message');
-  // 대답을 (silent가 아니면) 말풍선에 표시하고, 그 꽃잎(item)에도 저장 → 만개 후 다시 누르면 같은 대답이 나옴
-  function show(text) {
-    if (!silent) bubble.textContent = text;
-    if (item) item.reply = text;
-  }
-  // 주소가 없거나 오프라인이면 곧바로 규칙형 대답
-  if (!SHEET_URL || (navigator && navigator.onLine === false)) {
-    show(fairyAnswer());
-    return;
-  }
-  if (!silent) bubble.textContent = '음~ 좋은 질문이다! 잠깐 생각해볼게 🤔✨'; // 생각 중(저장 안 함)
+// 요정 대답을 서버(Gemini)에서 받아 콜백 cb(text)로 넘긴다. 오프라인/오류면 규칙형 대답으로 전환.
+function fetchFairyReply(question, animal, cb) {
+  if (!SHEET_URL || (navigator && navigator.onLine === false)) { cb(fairyAnswer()); return; }
   let done = false;
   const fallback = setTimeout(function () {
-    if (!done) { done = true; show(fairyAnswer()); }
+    if (!done) { done = true; cb(fairyAnswer()); }
   }, 9000); // 9초 넘으면 기다리지 않고 규칙형으로
   fetch(SHEET_URL, {
     method: 'POST',
@@ -1292,7 +1282,7 @@ function askFairyAI(question, item, silent) {
       token: SHEET_TOKEN,
       action: 'ask',
       question: question || '',
-      animal: currentCard ? currentCard.name : ''
+      animal: animal || ''
     })
   })
     .then(function (r) { return r.json(); })
@@ -1300,12 +1290,12 @@ function askFairyAI(question, item, silent) {
       if (done) return;
       done = true; clearTimeout(fallback);
       const reply = (d && d.reply) ? String(d.reply).trim() : '';
-      show(reply ? reply : fairyAnswer());
+      cb(reply ? reply : fairyAnswer());
     })
     .catch(function () {
       if (done) return;
       done = true; clearTimeout(fallback);
-      show(fairyAnswer()); // 오류/오프라인이면 규칙형
+      cb(fairyAnswer()); // 오류/오프라인이면 규칙형
     });
 }
 
@@ -1566,16 +1556,14 @@ function addPetal() {
   playSound('petal');
   resetIdleHint();
   if (petalCount < 5) {
-    // 방금 추가한 이 꽃잎에 요정 대답을 저장해서, 만개 후 다시 누르면 같은 대답을 보여줌
-    askFairyAI(q, petalQuestions[petalQuestions.length - 1]);
+    // 질문 만드는 동안엔 답을 주지 않고 가볍게 반응만 (답은 만개 후 꽃잎을 누를 때 나옴)
+    document.getElementById('fairy-message').textContent = randItem(FAIRY_MESSAGES.accept);
   } else {
     document.getElementById('btn-add-petal').style.display = 'none';
     document.getElementById('btn-hint').style.display = 'none';
     document.getElementById('btn-bloom').style.display = 'inline-block';
     document.getElementById('q-input').disabled = true;
     document.getElementById('fairy-message').textContent = '✨ 다섯 개의 질문! 이제 만개시킬 시간이야!';
-    // 5번째 대답도 조용히 저장(화면은 만개 안내 유지) → 재클릭 시 5개 모두 같은 대답
-    askFairyAI(q, petalQuestions[petalQuestions.length - 1], true);
     clearTimeout(idleTimer);
   }
 }
@@ -1635,25 +1623,31 @@ function flipPetal(petal) {
   playSound('flip');
   const idx = parseInt(petal.id.split('-')[1]);
   const item = petalQuestions[idx];
-  const facts = ANIMAL_FACTS[currentCard ? currentCard.name : ''];
-  let msg;
-  if (item && item.reply) {
-    // 아까 요정이 해줬던 그 대답을 그대로 다시 보여줌 (매번 바뀌지 않도록)
-    msg = item.q ? ('🌸 “' + item.q + '” — ' + item.reply) : ('🌸 ' + item.reply);
-  } else if (item && item.q) {
-    // (대답이 저장 안 된 경우) 아이가 적은 질문을 다시 비춰주고 반응해줌
-    if (facts && facts.length) msg = '🌸 “' + item.q + '” — 혹시 알아? ' + randItem(facts);
-    else msg = '🌸 “' + item.q + '” — ' + randItem(FAIRY_MESSAGES.followups);
-  } else {
-    // 따로 적지 않은 꽃잎엔 생각을 넓혀주는 한마디
-    msg = '✨ ' + randItem(FAIRY_MESSAGES.level2);
+  const bubble = document.getElementById('fairy-message');
+  function afterShown() {
+    const allFlipped = [...document.querySelectorAll('.petal-g')].every(p => p.classList.contains('flipped'));
+    if (allFlipped) {
+      setTimeout(function () {
+        bubble.textContent = '🌸 모든 꽃잎을 다 열어봤어! 정말 멋진 이야기꽃이야!';
+      }, 3500);
+    }
   }
-  document.getElementById('fairy-message').textContent = msg;
-  const allFlipped = [...document.querySelectorAll('.petal-g')].every(p => p.classList.contains('flipped'));
-  if (allFlipped) {
-    setTimeout(() => {
-      document.getElementById('fairy-message').textContent = '🌸 모든 꽃잎을 다 열어봤어! 정말 멋진 이야기꽃이야!';
-    }, 3500);
+  if (item && item.reply) {
+    // 이미 받아둔 답이면 그대로 다시 보여줌 (다시 눌러도 안 바뀜)
+    bubble.textContent = item.q ? ('🌸 “' + item.q + '” — ' + item.reply) : ('🌸 ' + item.reply);
+    afterShown();
+  } else if (item && item.q) {
+    // 만개 후 이 꽃잎을 처음 누르면, 그제서야 요정이 그 질문에 답을 해줌
+    bubble.textContent = '음~ “' + item.q + '” … 요정이 생각 중이야 🤔✨';
+    fetchFairyReply(item.q, currentCard ? currentCard.name : '', function (text) {
+      item.reply = text; // 저장 → 다시 눌러도 같은 답
+      bubble.textContent = '🌸 “' + item.q + '” — ' + text;
+      afterShown();
+    });
+  } else {
+    // 질문을 적지 않은 꽃잎엔 생각을 넓혀주는 한마디
+    bubble.textContent = '✨ ' + randItem(FAIRY_MESSAGES.level2);
+    afterShown();
   }
 }
 
