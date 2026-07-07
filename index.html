@@ -1265,6 +1265,45 @@ function fairyAnswer() {
   return accept;
 }
 
+// ============ AI 요정 대답 ============
+// 인터넷이 있으면 구글 앱스 스크립트 → Gemini(무료 AI)로 아이 질문에 맞는 대답을 받아오고,
+// 인터넷이 없거나 오류가 나면 위의 규칙형 대답(fairyAnswer)으로 자동 전환한다.
+function askFairyAI(question) {
+  const bubble = document.getElementById('fairy-message');
+  // 주소가 없거나 오프라인이면 곧바로 규칙형 대답
+  if (!SHEET_URL || (navigator && navigator.onLine === false)) {
+    bubble.textContent = fairyAnswer();
+    return;
+  }
+  bubble.textContent = '음~ 좋은 질문이다! 잠깐 생각해볼게 🤔✨';
+  let done = false;
+  const fallback = setTimeout(function () {
+    if (!done) { done = true; bubble.textContent = fairyAnswer(); }
+  }, 9000); // 9초 넘으면 기다리지 않고 규칙형으로
+  fetch(SHEET_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      token: SHEET_TOKEN,
+      action: 'ask',
+      question: question || '',
+      animal: currentCard ? currentCard.name : ''
+    })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (done) return;
+      done = true; clearTimeout(fallback);
+      const reply = (d && d.reply) ? String(d.reply).trim() : '';
+      bubble.textContent = reply ? reply : fairyAnswer();
+    })
+    .catch(function () {
+      if (done) return;
+      done = true; clearTimeout(fallback);
+      bubble.textContent = fairyAnswer(); // 오류/오프라인이면 규칙형
+    });
+}
+
 // ============ 상태 ============
 let currentTopic = 'animal';
 let currentChild = null;
@@ -1522,7 +1561,7 @@ function addPetal() {
   playSound('petal');
   resetIdleHint();
   if (petalCount < 5) {
-    document.getElementById('fairy-message').textContent = fairyAnswer();
+    askFairyAI(q); // 아이 질문을 AI 요정에게 보내고 대답을 말풍선에 표시 (오프라인이면 규칙형)
   } else {
     document.getElementById('btn-add-petal').style.display = 'none';
     document.getElementById('btn-hint').style.display = 'none';
